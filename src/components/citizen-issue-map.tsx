@@ -1,4 +1,4 @@
-/// <reference types="google.maps" />
+import type { Map as LeafletMap, LayerGroup, Marker as LeafletMarker } from "leaflet";
 
 import {
   Building2,
@@ -383,45 +383,12 @@ const issueSchema = z.object({
   lng: z.number(),
 });
 
-let mapsPromise: Promise<typeof google> | null = null;
-function loadMaps() {
-  if (typeof google !== "undefined" && google.maps) return Promise.resolve(google);
-  if (mapsPromise) return mapsPromise;
-  mapsPromise = new Promise((resolve, reject) => {
-    const key =
-      import.meta.env["VITE_GOOGLE_MAPS_BROWSER_KEY"] ||
-      import.meta.env["VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY"];
-    const channel =
-      import.meta.env["VITE_GOOGLE_MAPS_TRACKING_ID"] ||
-      import.meta.env["VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_TRACKING_ID"];
-    if (!key) {
-      reject(new Error("Map key unavailable"));
-      return;
-    }
-    // Google fires gm_authFailure when the key blocks this domain (e.g. after
-    // exporting to new hosting) — surface the friendly fallback instead of a broken map.
-    (window as unknown as { gm_authFailure?: () => void }).gm_authFailure = () =>
-      reject(new Error("Map key not allowed on this domain"));
-    const callback = `initVikasSetuMap${Date.now()}`;
-    window[callback as keyof Window] = (() => {
-      resolve(google);
-      delete window[callback as keyof Window];
-    }) as never;
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&loading=async&callback=${callback}&channel=${encodeURIComponent(channel ?? "vikassetu")}`;
-    script.async = true;
-    script.onerror = () => reject(new Error("Map failed to load"));
-    document.head.appendChild(script);
-  });
-  return mapsPromise;
-}
-
 export function CitizenIssueMap({ district, language, districtName }: Props) {
   const t = copy[language];
   const mapNode = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<google.maps.Marker[]>([]);
-  const draftMarkerRef = useRef<google.maps.Marker | null>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
+  const markersLayerRef = useRef<LayerGroup | null>(null);
+  const draftMarkerRef = useRef<LeafletMarker | null>(null);
   const [reports, setReports] = useState<Issue[]>([]);
   const [mode, setMode] = useState<MapMode>("needs");
   const [filter, setFilter] = useState<"all" | Category>("all");
@@ -457,79 +424,151 @@ export function CitizenIssueMap({ district, language, districtName }: Props) {
     let cancelled = false;
     setMapReady(false);
     setLocation(undefined);
-    loadMaps()
-      .then((maps) => {
+
+    async function initLeaflet() {
+      if (typeof window === "undefined" || !mapNode.current) return;
+      try {
+        const L = (await import("leaflet")).default;
         if (cancelled || !mapNode.current) return;
-        const map = new maps.maps.Map(mapNode.current, {
-          center: centers[district],
-          zoom: centers[district].zoom,
-          clickableIcons: false,
-          fullscreenControl: false,
-          mapTypeControl: false,
-          streetViewControl: false,
-          styles: [{ featureType: "poi", stylers: [{ visibility: "off" }] }],
+
+        if (mapRef.current) {
+          mapRef.current.remove();
+          mapRef.current = null;
+        }
+
+        const center = centers[district];
+        const map = L.map(mapNode.current, {
+          center: [center.lat, center.lng],
+          zoom: center.zoom,
+          zoomControl: true,
         });
+
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+          maxZoom: 19,
+        }).addTo(map);
+
+        const markersLayer = L.layerGroup().addTo(map);
+        markersLayerRef.current = markersLayer;
         mapRef.current = map;
-        markersRef.current = [];
-        draftMarkerRef.current = null;
-        map.addListener("click", (event: google.maps.MapMouseEvent) => {
-          const point = event.latLng;
-          if (!point) return;
-          setLocation({ lat: point.lat(), lng: point.lng() });
+
+        map.on("click", (event: L.LeafletMouseEvent) => {
+          setLocation({ lat: event.latlng.lat, lng: event.latlng.lng });
           setError("");
           setInvalidField(null);
         });
+
         setMapReady(true);
-      })
-      .catch(() => setError("Interactive map is temporarily unavailable."));
+      } catch {
+        if (!cancelled) setError("Interactive map is temporarily unavailable.");
+      }
+    }
+
+    void initLeaflet();
+
     return () => {
       cancelled = true;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
     };
   }, [district]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!mapReady || !map) return;
-    markersRef.current.forEach((marker) => marker.setMap(null));
-    const counts = new Map<string, number>();
-    const keyOf = (issue: Issue) => `${issue.lat.toFixed(3)},${issue.lng.toFixed(3)}`;
-    visible.forEach((issue) => counts.set(keyOf(issue), (counts.get(keyOf(issue)) ?? 0) + 1));
-    markersRef.current = visible.map((issue) => {
-      const count = counts.get(keyOf(issue)) ?? 1;
-      const marker = new google.maps.Marker({
-        map,
-        position: { lat: issue.lat, lng: issue.lng },
-        title: `${issue.title} — ${issue.department}`,
-        label: { text: String(count), color: "#ffffff", fontWeight: "700" },
+    const layer = markersLayerRef.current;
+    if (!mapReady || !map || !layer) return;
+
+    let cancelled = false;
+    async function renderMarkers() {
+      const L = (await import("leaflet")).default;
+      if (cancelled || !markersLayerRef.current) return;
+      markersLayerRef.current.clearLayers();
+
+      const counts = new Map<string, number>();
+      const keyOf = (issue: Issue) => `${issue.lat.toFixed(3)},${issue.lng.toFixed(3)}`;
+      visible.forEach((issue) => counts.set(keyOf(issue), (counts.get(keyOf(issue)) ?? 0) + 1));
+
+      visible.forEach((issue) => {
+        const count = counts.get(keyOf(issue)) ?? 1;
+        const icon = L.divIcon({
+          className: "custom-issue-marker",
+          html: `<div style="
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 9999px;
+            background: #0284c7;
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 12px;
+            border: 2px solid #ffffff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+            cursor: pointer;
+          ">${count}</div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+        });
+
+        const marker = L.marker([issue.lat, issue.lng], {
+          icon,
+          title: `${issue.title} — ${issue.department}`,
+        });
+        marker.on("click", () => setSelected(issue));
+        marker.addTo(markersLayerRef.current!);
       });
-      marker.addListener("click", () => setSelected(issue));
-      return marker;
-    });
+    }
+
+    void renderMarkers();
+    return () => {
+      cancelled = true;
+    };
   }, [visible, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map) return;
-    draftMarkerRef.current?.setMap(null);
-    draftMarkerRef.current = null;
+    if (draftMarkerRef.current) {
+      draftMarkerRef.current.remove();
+      draftMarkerRef.current = null;
+    }
     if (!location) return;
-    draftMarkerRef.current = new google.maps.Marker({
-      map,
-      position: location,
-      title: t.selected,
-      animation: google.maps.Animation.DROP,
-      zIndex: 999,
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 11,
-        fillColor: "#dc2626",
-        fillOpacity: 1,
-        strokeColor: "#ffffff",
-        strokeWeight: 3,
-      },
-    });
-    map.panTo(location);
-    map.setZoom(15);
+
+    let cancelled = false;
+    async function renderDraftMarker() {
+      const L = (await import("leaflet")).default;
+      if (cancelled || !mapRef.current || !location) return;
+      const draftIcon = L.divIcon({
+        className: "custom-draft-marker",
+        html: `<div style="
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 26px;
+          height: 26px;
+          border-radius: 9999px;
+          background: #dc2626;
+          border: 3px solid #ffffff;
+          box-shadow: 0 2px 10px rgba(220,38,38,0.5);
+        "><span style="width: 6px; height: 6px; background: #ffffff; border-radius: 50%;"></span></div>`,
+        iconSize: [26, 26],
+        iconAnchor: [13, 13],
+      });
+      draftMarkerRef.current = L.marker([location.lat, location.lng], {
+        icon: draftIcon,
+        zIndexOffset: 1000,
+      }).addTo(mapRef.current);
+      mapRef.current.setView([location.lat, location.lng], 15);
+    }
+
+    void renderDraftMarker();
+    return () => {
+      cancelled = true;
+    };
   }, [location, t.selected, mapReady]);
 
   useEffect(() => {
@@ -540,8 +579,7 @@ export function CitizenIssueMap({ district, language, districtName }: Props) {
       setMode(issue.mode);
       setFilter("all");
       setSelected(issue);
-      mapRef.current?.panTo({ lat: issue.lat, lng: issue.lng });
-      mapRef.current?.setZoom(15);
+      mapRef.current?.setView([issue.lat, issue.lng], 15);
     };
     window.addEventListener("vikassetu:focus-issue", onFocus);
     return () => window.removeEventListener("vikassetu:focus-issue", onFocus);
@@ -914,13 +952,13 @@ export function CitizenIssueMap({ district, language, districtName }: Props) {
                 aria-label={`${districtName}: ${t.map}`}
                 className="h-[460px] w-full bg-muted lg:h-[610px]"
               />
-              <div className="pointer-events-none absolute left-3 top-3 rounded-md border border-border bg-card/95 px-3 py-2 text-xs font-semibold text-foreground shadow-sm">
+              <div className="pointer-events-none absolute left-3 top-3 z-[1000] rounded-md border border-border bg-card/95 px-3 py-2 text-xs font-semibold text-foreground shadow-sm">
                 <Navigation className="mr-1.5 inline size-4 text-primary" aria-hidden="true" />
                 {visible.length} {t.reports}
               </div>
               {selected && (
                 <article
-                  className="absolute inset-x-3 bottom-3 max-w-sm rounded-md border border-border bg-card p-4 shadow-xl"
+                  className="absolute inset-x-3 bottom-3 z-[1000] max-w-sm rounded-md border border-border bg-card p-4 shadow-xl"
                   aria-label={t.viewIssue}
                 >
                   <Button

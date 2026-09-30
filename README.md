@@ -69,15 +69,10 @@ cp .env.example .env
 Both are read in browser code only, so they are visible to visitors — restrict
 the key by HTTP referrer in Google Cloud Console.
 
-## Google Maps key
+## Interactive Maps
 
-The included development key is restricted to its original preview domain,
-so on any new address the district maps show a friendly "map
-unavailable" message instead of the map (the rest of the app keeps working).
-To get the maps back on your domain, either add your domain to that key's
-allowed HTTP referrers (APIs & Services → Credentials → the browser key →
-Application restrictions) or create your own free Google Maps JavaScript API
-key and put it in `.env` before building. See [EXPORT.md](EXPORT.md).
+The interactive issue reporting and hotspot maps use **OpenStreetMap** powered by **Leaflet**.
+They are completely free, open-source, and work out of the box on `localhost` or any production domain with **zero configuration or API keys required**.
 
 ## Project layout
 

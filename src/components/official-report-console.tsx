@@ -1,4 +1,4 @@
-/// <reference types="google.maps" />
+import type { Map as LeafletMap, LayerGroup } from "leaflet";
 
 import {
   CheckCircle2,
@@ -57,39 +57,6 @@ const icons = {
 } as const;
 const statuses = ["Reported", "Under review", "Work scheduled", "Resolved"];
 
-let mapsPromise: Promise<typeof google> | null = null;
-function loadMaps() {
-  if (typeof google !== "undefined" && google.maps) return Promise.resolve(google);
-  if (mapsPromise) return mapsPromise;
-  mapsPromise = new Promise((resolve, reject) => {
-    const key =
-      import.meta.env["VITE_GOOGLE_MAPS_BROWSER_KEY"] ||
-      import.meta.env["VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY"];
-    const channel =
-      import.meta.env["VITE_GOOGLE_MAPS_TRACKING_ID"] ||
-      import.meta.env["VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_TRACKING_ID"];
-    if (!key) {
-      reject(new Error("Map key unavailable"));
-      return;
-    }
-    // Google fires gm_authFailure when the key blocks this domain (e.g. after
-    // exporting to new hosting) — surface the friendly fallback instead of a broken map.
-    (window as unknown as { gm_authFailure?: () => void }).gm_authFailure = () =>
-      reject(new Error("Map key not allowed on this domain"));
-    const callback = `initVikasSetuOfficialMap${Date.now()}`;
-    window[callback as keyof Window] = (() => {
-      resolve(google);
-      delete window[callback as keyof Window];
-    }) as never;
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&loading=async&callback=${callback}&channel=${encodeURIComponent(channel ?? "vikassetu-official")}`;
-    script.async = true;
-    script.onerror = () => reject(new Error("Map failed to load"));
-    document.head.appendChild(script);
-  });
-  return mapsPromise;
-}
-
 export function OfficialReportConsole({ district, districtName, officialName }: Props) {
   const [reports, setReports] = useState<Issue[]>([]);
   const [filter, setFilter] = useState<"all" | Category>("all");
@@ -100,8 +67,8 @@ export function OfficialReportConsole({ district, districtName, officialName }: 
   const [mapError, setMapError] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const mapNode = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const markers = useRef<google.maps.Marker[]>([]);
+  const mapRef = useRef<LeafletMap | null>(null);
+  const markersLayerRef = useRef<LayerGroup | null>(null);
 
   const load = () =>
     readReports()
@@ -125,40 +92,98 @@ export function OfficialReportConsole({ district, districtName, officialName }: 
   useEffect(() => {
     let cancelled = false;
     setMapReady(false);
-    loadMaps()
-      .then((maps) => {
+
+    async function initLeaflet() {
+      if (typeof window === "undefined" || !mapNode.current) return;
+      try {
+        const L = (await import("leaflet")).default;
         if (cancelled || !mapNode.current) return;
-        mapRef.current = new maps.maps.Map(mapNode.current, {
-          center: centers[district],
-          zoom: centers[district].zoom,
-          clickableIcons: false,
-          fullscreenControl: false,
-          mapTypeControl: false,
-          streetViewControl: false,
+
+        if (mapRef.current) {
+          mapRef.current.remove();
+          mapRef.current = null;
+        }
+
+        const center = centers[district];
+        const map = L.map(mapNode.current, {
+          center: [center.lat, center.lng],
+          zoom: center.zoom,
+          zoomControl: true,
         });
+
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+          maxZoom: 19,
+        }).addTo(map);
+
+        const layer = L.layerGroup().addTo(map);
+        markersLayerRef.current = layer;
+        mapRef.current = map;
         setMapError(false);
         setMapReady(true);
-      })
-      .catch(() => setMapError(true));
+      } catch {
+        if (!cancelled) setMapError(true);
+      }
+    }
+
+    void initLeaflet();
+
     return () => {
       cancelled = true;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
     };
   }, [district]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!mapReady || !map) return;
-    markers.current.forEach((marker) => marker.setMap(null));
-    markers.current = visible.map((issue) => {
-      const marker = new google.maps.Marker({
-        map,
-        position: { lat: issue.lat, lng: issue.lng },
-        title: `${issue.title} — ${issue.status}`,
-        label: { text: "1", color: "#ffffff", fontWeight: "700" },
+    const layer = markersLayerRef.current;
+    if (!mapReady || !map || !layer) return;
+
+    let cancelled = false;
+    async function renderMarkers() {
+      const L = (await import("leaflet")).default;
+      if (cancelled || !markersLayerRef.current) return;
+      markersLayerRef.current.clearLayers();
+
+      visible.forEach((issue) => {
+        const icon = L.divIcon({
+          className: "custom-official-marker",
+          html: `<div style="
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 9999px;
+            background: #0284c7;
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 12px;
+            border: 2px solid #ffffff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+            cursor: pointer;
+          ">1</div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+        });
+
+        const marker = L.marker([issue.lat, issue.lng], {
+          icon,
+          title: `${issue.title} — ${issue.status}`,
+        });
+        marker.on("click", () => setSelectedId(issue.id));
+        marker.addTo(markersLayerRef.current!);
       });
-      marker.addListener("click", () => setSelectedId(issue.id));
-      return marker;
-    });
+    }
+
+    void renderMarkers();
+    return () => {
+      cancelled = true;
+    };
   }, [visible, mapReady]);
 
   useEffect(() => {
@@ -171,8 +196,7 @@ export function OfficialReportConsole({ district, districtName, officialName }: 
     setStatus(issue.status);
     setFeedback("");
     setMessage("");
-    mapRef.current?.panTo({ lat: issue.lat, lng: issue.lng });
-    mapRef.current?.setZoom(15);
+    mapRef.current?.setView([issue.lat, issue.lng], 15);
   };
 
   const submitFeedback = async () => {
