@@ -1,0 +1,25 @@
+# Roadmap
+
+- [x] Keep the complete first uploaded image as the background.
+- [x] Place and size the interactive login form inside its existing blank right-side area.
+- [x] Verify desktop and mobile presentation.
+- [x] Rebuild the role cards as a vertical stack: icon above, label and description underneath.
+- [x] Verify all states (MP/RJ/UP) and their districts work in the dropdowns.
+- [x] Save account details in the browser (localStorage) for the hackathon prototype — no conflicts with existing functions.
+- [x] Finish full health check (languages, roles, OTP, toasts, layouts).
+- [x] Keep "(Optional)" on the same line as the Aadhaar number at every window size.
+- [x] Build the citizen platform top navigation and district-aware image carousel.
+- [x] Add district-specific civic figures, official services, public information, and maps.
+- [x] Add polished district profiles, census facts, notices, and Collector details.
+- [x] Add dated, department-labelled district notice boards with accessible icon text.
+- [x] Add browser-saved citizen issue reports with photos, map locations, filters, and hotspots.
+- [x] Clarify report validation and replace the citizen header branding with the uploaded VikasSetu logo.
+- [x] Open a dedicated Government Official workspace from the access page.
+- [x] Share citizen reports, district map, status updates, and official feedback across both prototype views.
+- [x] Give the Government Official header a profile menu with a way back to the access page.
+- [x] Keep every image inside the project so exports and zips carry them.
+- [x] Show a friendly fallback when the map key is not allowed on a new domain.
+- [x] Prove the app builds and runs from a clean install: Cloudflare Workers, Netlify, and plain Node.
+- [x] Add `.env.example`, ignore local `.env`, and document run, build, and deploy steps.
+- [x] Remove public-facing Lovable promotion without changing required build or map integration names.
+- [x] Replace stale page and social metadata while retaining the VikasSetu favicon and required tooling.
