@@ -61,10 +61,10 @@ Copy the example file and fill it in before building for your own domain:
 cp .env.example .env
 ```
 
-| Variable                                         | Purpose                                                  |
-| ------------------------------------------------ | -------------------------------------------------------- |
-| `VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY` | Google Maps JavaScript API key used by the district maps |
-| `VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_TRACKING_ID` | Optional Maps usage-tracking channel name                |
+| Variable                       | Purpose                                                  |
+| ------------------------------ | -------------------------------------------------------- |
+| `VITE_GOOGLE_MAPS_BROWSER_KEY` | Google Maps JavaScript API key used by the district maps |
+| `VITE_GOOGLE_MAPS_TRACKING_ID` | Optional Maps usage-tracking channel name                |
 
 Both are read in browser code only, so they are visible to visitors — restrict
 the key by HTTP referrer in Google Cloud Console.
@@ -78,21 +78,6 @@ To get the maps back on your domain, either add your domain to that key's
 allowed HTTP referrers (APIs & Services → Credentials → the browser key →
 Application restrictions) or create your own free Google Maps JavaScript API
 key and put it in `.env` before building. See [EXPORT.md](EXPORT.md).
-
-## Pushing this to GitHub
-
-`.env` was committed before the ignore rules were added, so it is still tracked.
-After adding this repository to GitHub, untrack it (the file stays on disk) and
-push again:
-
-```sh
-git rm --cached .env
-git commit -m "Stop tracking local environment file"
-git push
-```
-
-The old key also stays in the repository history, so the safe move is to create
-your own Google Maps key and replace the value in `.env`.
 
 ## Project layout
 

@@ -13,7 +13,7 @@ npm run build
 
 ## Google Maps key
 
-The map key in `.env` (`VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY`) is
+The map key in `.env` (`VITE_GOOGLE_MAPS_BROWSER_KEY` or `VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY`) is
 restricted to its original preview domain. On your own domain the district maps
 will show a friendly "map unavailable" message instead of the map until you do
 one of the following:

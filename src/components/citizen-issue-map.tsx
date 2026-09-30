@@ -388,8 +388,12 @@ function loadMaps() {
   if (typeof google !== "undefined" && google.maps) return Promise.resolve(google);
   if (mapsPromise) return mapsPromise;
   mapsPromise = new Promise((resolve, reject) => {
-    const key = import.meta.env["VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY"];
-    const channel = import.meta.env["VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_TRACKING_ID"];
+    const key =
+      import.meta.env["VITE_GOOGLE_MAPS_BROWSER_KEY"] ||
+      import.meta.env["VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY"];
+    const channel =
+      import.meta.env["VITE_GOOGLE_MAPS_TRACKING_ID"] ||
+      import.meta.env["VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_TRACKING_ID"];
     if (!key) {
       reject(new Error("Map key unavailable"));
       return;

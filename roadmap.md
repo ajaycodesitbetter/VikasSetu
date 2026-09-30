@@ -21,5 +21,5 @@
 - [x] Show a friendly fallback when the map key is not allowed on a new domain.
 - [x] Prove the app builds and runs from a clean install: Cloudflare Workers, Netlify, and plain Node.
 - [x] Add `.env.example`, ignore local `.env`, and document run, build, and deploy steps.
-- [x] Remove public-facing Lovable promotion without changing required build or map integration names.
+- [x] Remove external platform branding and ensure independent clean build.
 - [x] Replace stale page and social metadata while retaining the VikasSetu favicon and required tooling.
